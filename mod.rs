@@ -12,7 +12,7 @@
        vers="0.1",
        url="https://github.com/Aatch/rust-fmt")];
 
-#[create_type = "lib"];
+#[crate_type = "lib"];
 
 pub mod printf;
 pub mod parse;
