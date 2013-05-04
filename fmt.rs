@@ -754,24 +754,37 @@ mod test {
         parse_fail!("%[]a");
     }
 
+    #[test]
     fn write_format_str() {
         let mut parser = Parser::new("%1a %.2b %3c %{0}b", &test_desc);
-        let res = parser.next_item();
-        let args = ["An A", "T", "3"];
+        let args = ["$", "T", "3"];
         let mut pos = 0;
-        let s = do with_str_writer |w| {
-            do write_format(w, parser) |spec| {
-                let a = match spec.position {
-                    None => {
+        let s = do io::with_str_writer |w| {
+            do write_format(w, &mut parser) |spec| {
+                let mut a = match spec.position {
+                    option::None => {
                         let tmp = args[pos];
                         pos += 1;
                         tmp
                     }
                     Some(n) => {
-                        arg[n]
+                        args[n]
                     }
-                };
+                }.to_owned();
+                match spec.width {
+                    None => (),
+                    Value(wd) => {
+                        a = str::repeat(" ", (wd-a.len() as int).max(&0) as uint) + a;
+                    }
+                    _ => fail!("Unexpected width type")
+                }
+
+                a.push_char(spec.specifier);
+                a
             }
         };
+
+
+        assert_eq!(s, ~"$a Tb   3c $b")
     }
 }
