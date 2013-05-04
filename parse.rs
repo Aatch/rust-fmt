@@ -431,34 +431,6 @@ pub fn write_format<'a, W:Writer>(writer:W, parser: &'a mut Parser, f: &fn(Spec)
     }
 }
 
-pub mod printf {
-    use super::*;
-    use core::io::Writer;
-
-    pub static printf_desc : ParserDesc<'static> = ParserDesc {
-        indicator: '%',
-        special_flag: Some('!'),
-        flags: ['#', '0', '-', ' ', '+', '\''],
-        specifiers: ['d', 'f', 's', '?']
-    };
-
-    pub trait Formatter {
-        fn format(&self, &Writer, Spec);
-    }
-
-    pub trait IntFormat {
-        fn format_d(&self, &Writer, Spec);
-    }
-
-    pub trait FloatFormat {
-        fn format_f(&self, &Writer, Spec);
-    }
-
-    pub trait StrFormat {
-        fn format_s(&self, &Writer, Spec);
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
