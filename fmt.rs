@@ -11,7 +11,6 @@
 /*!
  * Various formatting and format string handling.
  *
- *
  */
 
 pub enum ParseResult<'self> {
@@ -35,7 +34,8 @@ pub struct Spec {
     width: Field,
     precision: Field,
     flags: ~[char],
-    special_flag: bool
+    special_flag: bool,
+    num_arg: Option<int>,
 }
 
 pub struct ParserDesc<'self> {
@@ -59,7 +59,7 @@ enum State {
 
 static forbidden_chars : &'static [char] = &'static [
     '1', '2', '3', '4', '5', '6', '7','8', '9',
-    '.', '*', '[', ']' ,'{', '}'
+    '.', '*', '[', ']' ,'{', '}', '<', '>'
 ];
 
 /**
@@ -67,21 +67,26 @@ static forbidden_chars : &'static [char] = &'static [
  * printf/scanf style placeholders, but more generic, allowing for the creation of custom
  * formatting placeholders.
  *
- * A parser is created by providing an indicator character, a set of flag characters and a set
- * conversion characters. The two sets should be disjoint, but this isn't enforced. Digits and
- * characters specified in the grammar are not allowed as indicators, flags or conversion
- * specifiers. The indicator is not allowed as a flag or conversion specifier
+ * A parser is created by providing an indicator character, an optional special flag, a set of flag
+ * characters and a set conversion characters. The two sets should be disjoint, but this isn't
+ * enforced.
  *
  * The grammar of a format placeholder is as follows:
  *
- *      Placeholder := Indicator Position? Flag* Width? Precision? Specifier
+ *      Placeholder := Indicator SpecialFlag? Position? Flag* Width? Precision? Specifier
  *      Position := '{' '-'? [0-9]+ '}'
- *      Width := [1-9] | '[' ('-'? [0-9]+ | '*') ']'
- *      Precision := '.' ([1-9] | '[' ('-'? [0-9]+ | '*' ) ']')
- *      Flag := <From supplied set>
- *      Specifier := <From supplied set>
+ *      Width := [1-9]+ | '[' ('-'? [0-9]+ | '*') ']'
+ *      Precision := '.' ([1-9]+ | '[' ('-'? [0-9]+ | '*' ) ']')
  *
- * So the forbidden characters are '1'..'9', '{', '}', '[', ']', '*' and '.'.
+ *      SpecialFlag := <given>
+ *      Flag := <From supplied set>
+ *      Specifier := NumArg? <From supplied set>
+ *
+ *      NumArg:= '<' '-'? [0-9]+ '>'
+ *
+ * Invalid character(s) for indicators, flags and specifiers are:
+ *      '1'..'9', '{', '}', '[', ']', '<', '>', '*' and '.'.
+ * Invalid character(s) for indicators and specifiers are ' '
  *
  * The parser is greedy, so it will only skip to the next section if there is no way to continue on
  * the current section.
@@ -165,6 +170,11 @@ pub impl<'self> Parser<'self> {
             self.state = Specifier;
         }
 
+        let num_arg = match self.parse_num_arg() {
+            Ok(s) => s,
+            Err((msg, pos)) => return Error { msg: msg, pos: pos}
+        };
+
         let spec = match self.pop_spec() {
             Ok(s) => s,
             Err((msg, pos)) => return Error { msg: msg, pos: pos}
@@ -177,6 +187,7 @@ pub impl<'self> Parser<'self> {
             precision: precision,
             flags: flags,
             special_flag: special_flag,
+            num_arg: num_arg
         })
     }
 
@@ -218,7 +229,7 @@ pub impl<'self> Parser<'self> {
             match self.parse_num() {
                 Some(n) => {
                     do self.expect('}') {
-                            Some(n)
+                        Some(n)
                     }
                 }
                 option::None => Ok(option::None)
@@ -282,6 +293,22 @@ pub impl<'self> Parser<'self> {
                 Some(n) => Value(n),
                 option::None => None
             })
+        }
+    }
+
+    priv fn parse_num_arg(&mut self) -> Result<Option<int>, (~str, uint)> {
+        if self.eat('<') {
+            match self.parse_num() {
+                Some(n) => {
+                    do self.expect('>') {
+                        Some(n)
+                    }
+                }
+                option::None =>
+                    return Err((fmt!("Unexpected character '%c', expected '0'..'9'", self.cur()), self.pos))
+            }
+        } else {
+            Ok(option::None)
         }
     }
 
@@ -467,6 +494,20 @@ mod test {
     }
 
     #[test]
+    fn parse_single_num_arg() {
+        let mut parser = Parser::new("%<12>a", &test_desc);
+        let res = parser.next_item();
+
+        match res {
+            Place(holder) => {
+                assert_eq!(holder.specifier, 'a');
+                assert_eq!(holder.num_arg, Some(12));
+            }
+            a => fail!("Didn't get expected parse result. Expected Place(Holder), got %?", a)
+        }
+    }
+
+    #[test]
     fn parse_multi_basic1() {
         let mut parser = Parser::new("%a%b", &test_desc);
 
@@ -606,27 +647,46 @@ mod test {
         assert_eq!(~"There are 42 things with 22.5000 items reading Mary Poppins, %x", s);
     }
 
-    #[test]
-    fn parse_fail1() {
-        let mut parser = Parser::new("%pa", &test_desc);
-        let res = parser.next_item();
+    macro_rules! parse_fail (
+        ($s:expr) => (
+            let _parser = Parser::new($s, &test_desc);
+            let res = _parser.next_item();
 
-        match res {
-            Error { _ } => (),
-            Place(holder) => fail!("Unexpected %?", holder),
-            a => fail!("Didn't get expected parse result. Expected Error, got %?", a)
-        }
+            match res {
+                Error { _ } => (),
+                Place(holder) => fail!("Unexpected %?", holder),
+                a => fail!("Didn't get expected parse result. Expected Error, got %?", a)
+            }
+        )
+    )
+
+    #[test]
+    fn parse_fail_spec() {
+        parse_fail!("%z");
     }
 
     #[test]
-    fn parse_fail2() {
-        let mut parser = Parser::new("%  a", &test_desc);
-        let res = parser.next_item();
+    fn parse_fail_flag() {
+        parse_fail!("%pa");
+    }
 
-        match res {
-            Error{ msg:_, pos:_ } => (),
-            Place(holder) => fail!("Unexpected: %?", holder),
-            a => fail!("Didn't get expected parse result. Expected Error, got %?", a)
-        }
+    #[test]
+    fn parse_fail_flag_repeat() {
+        parse_fail!("%  a");
+    }
+
+    #[test]
+    fn parse_fail_num_arg() {
+        parse_fail!("%<a>5a");
+    }
+
+    #[test]
+    fn parse_fail_position() {
+        parse_fail!("%{}5a");
+    }
+
+    #[test]
+    fn parse_fail_field() {
+        parse_fail!("%[]a");
     }
 }
