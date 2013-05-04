@@ -67,7 +67,7 @@ enum State {
 
 static forbidden_chars : &'static [char] = &'static [
     '1', '2', '3', '4', '5', '6', '7','8', '9',
-    '.', '*', '[', ']' ,'{', '}', '<', '>'
+    '.', '[', ']' ,'{', '}', '<', '>'
 ];
 
 /**
@@ -93,7 +93,7 @@ static forbidden_chars : &'static [char] = &'static [
  *      NumArg:= '<' '-'? [0-9]+ '>'
  *
  * Invalid character(s) for indicators, flags and specifiers are:
- *      '1'..'9', '{', '}', '[', ']', '<', '>', '*' and '.'.
+ *      '1'..'9', '{', '}', '[', ']', '<', '>', and '.'.
  * Invalid character(s) for indicators and specifiers are ' '
  *
  * The parser is greedy, so it will only skip to the next section if there is no way to continue on
@@ -104,6 +104,7 @@ pub impl<'self> Parser<'self> {
      * Creates a new parser following the rules of the given ParserDesc
      */
     pub fn new<'a>(src: &'a str, desc: &'a ParserDesc) -> Parser<'a> {
+        assert!(desc.indicator != ' ');
         assert!(!forbidden_chars.contains(&desc.indicator));
 
         Parser {
