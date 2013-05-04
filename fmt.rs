@@ -10,9 +10,9 @@
 
 /*!
  * Various formatting and format string handling.
- *
  */
 
+/// Result of parsing an item. See Parser::parse_item for details
 pub enum ParseResult<'self> {
     Place(Spec),
     Raw(&'self str),
@@ -20,14 +20,22 @@ pub enum ParseResult<'self> {
     End,
 }
 
+/// Field description
 #[deriving(Eq)]
 pub enum Field {
+    /// No field given in placeholder
     None,
+    /// Field is specific value
     Value(int),
+    /// Field value is the next argument
     Next,
+    /// Field value is in the nth argument
     Arg(int),
 }
 
+/**
+ * Specifier for a parsed placeholder
+ */
 pub struct Spec {
     specifier: char,
     position: Option<int>,
@@ -45,7 +53,7 @@ pub struct ParserDesc<'self> {
     specifiers: &'self [char]
 }
 
-struct Parser<'self> {
+pub struct Parser<'self> {
     desc: &'self ParserDesc<'self>,
     source: &'self str,
     priv pos: uint,
@@ -92,6 +100,9 @@ static forbidden_chars : &'static [char] = &'static [
  * the current section.
  */
 pub impl<'self> Parser<'self> {
+    /**
+     * Creates a new parser following the rules of the given ParserDesc
+     */
     pub fn new<'a>(src: &'a str, desc: &'a ParserDesc) -> Parser<'a> {
         assert!(!forbidden_chars.contains(&desc.indicator));
 
@@ -103,6 +114,16 @@ pub impl<'self> Parser<'self> {
         }
     }
 
+    /**
+     * Returns the next item that the parser gets.
+     *
+     * The four variants of ParseResult have the following meaning:
+     *
+     *      Place(Spec)         Parser found a specifier
+     *      Raw(&str)           Parser found regular text. Contents is a slice into the source string
+     *      Error {msg, pos}    Parser encountered an error described by `msg` at the given position.
+     *      End                 Parser encounted the end of the string
+     */
     pub fn next_item(&mut self) -> ParseResult<'self> {
         if self.pos == self.source.len() {
             return End;
@@ -119,6 +140,11 @@ pub impl<'self> Parser<'self> {
         }
     }
 
+    /**
+     * Parses a placeholder at the current position.
+     *
+     * See next_item for explaination of the return values
+     */
     pub fn parse_placeholder(&mut self) -> ParseResult<'self> {
         let c = self.pop();
         if c != self.desc.indicator {
@@ -191,14 +217,34 @@ pub impl<'self> Parser<'self> {
         })
     }
 
+    /**
+     * Advances the parser to the start of the next placeholder indicator
+     */
     pub fn skip_to_next_indicator(&mut self) {
         let new_pos = str::find_from(self.source, self.pos, |c| c == self.desc.indicator);
         self.pos = new_pos.get_or_default(self.source.len());
     }
 
+    /**
+     * Resets the parser, so it starts from beginning of the source string again
+     */
     pub fn reset(&mut self) {
         self.pos = 0;
         self.state = Position;
+    }
+
+    /**
+     * Returns whether or not the parser is at the end of the source string
+     */
+    pub fn at_end(&self) -> bool {
+        self.pos != self.source.len()
+    }
+
+    /**
+     * Returns the current position of the parser
+     */
+    pub fn cur_pos(&self) -> uint {
+        self.pos
     }
 
     // Parses a number
@@ -363,6 +409,24 @@ pub impl<'self> Parser<'self> {
             Ok(f())
         } else {
             Err((fmt!("Unexpected character '%c', expected '%c'", self.cur(), c), self.pos))
+        }
+    }
+}
+
+pub fn write_format<'a, W:Writer>(writer:W, parser: &'a mut Parser, f: &fn(Spec) -> ~str) {
+    let mut pos;
+    loop {
+        pos = parser.cur_pos();
+        match parser.next_item() {
+            Place(holder) => writer.write_str(f(holder)),
+            Error { _ } => {
+                parser.skip_to_next_indicator();
+                let p = parser.cur_pos();
+                let slice = parser.source.slice(pos,p);
+                writer.write_str(slice);
+            }
+            Raw(s) => writer.write_str(s),
+            End => break
         }
     }
 }
@@ -688,5 +752,26 @@ mod test {
     #[test]
     fn parse_fail_field() {
         parse_fail!("%[]a");
+    }
+
+    fn write_format_str() {
+        let mut parser = Parser::new("%1a %.2b %3c %{0}b", &test_desc);
+        let res = parser.next_item();
+        let args = ["An A", "T", "3"];
+        let mut pos = 0;
+        let s = do with_str_writer |w| {
+            do write_format(w, parser) |spec| {
+                let a = match spec.position {
+                    None => {
+                        let tmp = args[pos];
+                        pos += 1;
+                        tmp
+                    }
+                    Some(n) => {
+                        arg[n]
+                    }
+                };
+            }
+        };
     }
 }
