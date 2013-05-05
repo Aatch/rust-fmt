@@ -36,6 +36,43 @@ pub trait StrFormat {
     fn format_s(&self, @Writer, Spec);
 }
 
+pub enum Alignment {
+    Left, Center, Right
+}
+
+pub fn align_field(contents: ~str, width:uint, align:Alignment) -> ~str {
+    if contents.len() >= width { return contents; }
+
+    let mut contents = contents;
+
+    let padding = width - contents.len();
+
+    match align {
+        Left => {
+            for padding.times {
+                contents.push_char(' ');
+            }
+        }
+        Center => {
+            let pre = padding/2;
+            let post = padding-pre;
+            for pre.times {
+                str::unshift_char(&mut contents, ' ');
+            }
+            for post.times {
+                contents.push_char(' ');
+            }
+        }
+        Right => {
+            for padding.times {
+                str::unshift_char(&mut contents, ' ');
+            }
+        }
+    }
+
+    contents
+}
+
 // completely ignores the spec, and just calls to_str
 macro_rules! naive_impl{
     ($trt:ident, $mthd:ident, $ty:ty) => {
@@ -72,6 +109,7 @@ impl<'self> StrFormat for &'self str {
 mod test {
     use super::*;
     use parse::*;
+    use printf;
 
     #[test]
     fn test_int() {
@@ -145,5 +183,29 @@ mod test {
         );
         t!("x");
         t!('x');
+    }
+
+    #[test]
+    fn test_align_none() {
+        let a = align_field(~"field", 0, printf::Left);
+        assert_eq!(a, ~"field");
+    }
+
+    #[test]
+    fn test_align_left() {
+        let a = align_field(~"field", 10, printf::Left);
+        assert_eq!(a, ~"field     ");
+    }
+
+    #[test]
+    fn test_align_center() {
+        let a = align_field(~"field", 10, printf::Center);
+        assert_eq!(a, ~"  field   ");
+    }
+
+    #[test]
+    fn test_align_right() {
+        let a = align_field(~"field", 10, printf::Right);
+        assert_eq!(a, ~"     field");
     }
 }
